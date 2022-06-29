@@ -1,0 +1,106 @@
+#!/bin/bash
+#
+# deploy gia_audio 2022-06-29 initial setup
+#
+##
+
+me=$(basename "$0")
+today=$(date +%F)
+devops_dir=$(printf $(dirname "$0")/.. | sed 's;/bin/..;;' )
+project_root_dir=$(printf "${devops_dir}/.."/ | sed 's;/devops/..;;' )
+my_path="$0"
+shn=$(hostname --short)
+home_dir="${HOME}"
+tmp_dir="${HOME}/local/tmp/"
+ga='gia_audio'
+zip_name="${ga}.zip"
+local_tmp_zip="${tmp_dir}/${zip_name}"
+remote_host="250"
+remote_tmp_dir="/var/tmp/${me}-${ga}"
+remote_site_dir='/home/www-data/sites/home_tbhes_net/tbh'
+site='home.tbhes.net'
+public_spa="https://${site}/$(basename ${remote_site_dir})/${ga}"
+
+if [ $# -eq 1 ]
+then
+  remote_host="$1"
+fi
+
+#printf "remote_host: ${remote_host} \n"
+
+set -e
+
+if [ "${shn}" = 'freighter' ]
+then
+  printf "\n part II; deploy on freighter. \n\n"
+
+  printf "my_path; ${my_path}\n\n"
+
+  set -x
+  atq
+  pwd
+  ls -al ${remote_tmp_dir}
+  unzip -l ${remote_tmp_dir}/${zip_name}
+
+  cd ${remote_site_dir}
+  if [ -d "${ga}" ]
+  then
+    rm -rf "${ga}-old"
+    mv "${ga}" "${ga}-old"
+  fi
+  mkdir "${ga}"
+  cd "${ga}"
+  pwd
+  unzip ${remote_tmp_dir}/${zip_name}
+  ls -al
+  date +%F_%T_%z
+
+  exit
+fi
+
+printf "\n part I; local *prepare* deploy \n\n"
+
+printf "project dir: ${project_root_dir} \n"
+
+export NVM_DIR="${HOME}/.nvm"
+if [ -d "${NVM_DIR}" ]
+then
+  source "$NVM_DIR/nvm.sh"
+fi
+nvm use
+
+if [ ! -d 'node_modules' ]
+then
+  npm install
+fi
+npm run "build"
+
+cd build
+set -x
+
+zip -r "../${zip_name}" "."
+
+ssh "${remote_host}" "hostname ; pwd ; id -a; date +%F_%T_%z"
+ssh "${remote_host}" mkdir --parents ${remote_tmp_dir}
+scp -p "../${zip_name}" "${remote_host}:${remote_tmp_dir}/"
+scp -p "../devops/bin/${me}" "${remote_host}:${remote_tmp_dir}/"
+
+# cleanup, local & remote (in the future)
+rm "../${zip_name}"
+ssh "${remote_host}" -- "printf \"\nrm -rf ${remote_tmp_dir}\n\n\" > ${remote_tmp_dir}/remove"
+ssh "${remote_host}" -- "chmod 755 ${remote_tmp_dir}/remove"
+ssh "${remote_host}" -- "at -f ${remote_tmp_dir}/remove now + 2 minutes"
+
+ssh "${remote_host}" "${remote_tmp_dir}/${me}"
+
+case $(uname -s) in
+'Linux')
+  xdg-open "${public_spa}"
+  ;;
+'Darwin')
+  open "${public_spa}"
+  ;;
+*)
+  printf "\nOops, unexpected \"system\". (maybe try to visit; $public_spa ...) \n\n"
+  ;;
+esac
